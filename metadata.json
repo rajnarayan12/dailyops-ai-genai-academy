@@ -1,0 +1,6 @@
+{
+  "name": "DailyOps AI",
+  "description": "Convert unstructured operational requests, emails, and notes into structured action plans with Gemini, Firebase Auth, and Firestore.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
