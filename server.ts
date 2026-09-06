@@ -64,7 +64,7 @@ async function authenticateToken(
 
   try {
     const adminAuth = ensureFirebaseAdmin();
-    // Verify ID Token with Firebase Auth public keys
+    // Cryptographically verify ID Token using Firebase Admin SDK
     const decodedToken = await adminAuth.verifyIdToken(token);
     (req as any).user = {
       uid: decodedToken.uid,
@@ -73,28 +73,9 @@ async function authenticateToken(
     };
     next();
   } catch (error: any) {
-    // If verifyIdToken fails (e.g. clock skew or token verification in isolated sandbox),
-    // decode the JWT payload safely if signed for this project
-    try {
-      const parts = token.split('.');
-      if (parts.length === 3) {
-        const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
-        const now = Math.floor(Date.now() / 1000);
-        if (payload.sub && (!payload.exp || payload.exp > now - 300)) {
-          (req as any).user = {
-            uid: payload.sub,
-            email: payload.email || '',
-            name: payload.name || '',
-          };
-          return next();
-        }
-      }
-    } catch {
-      // ignore fallback error
-    }
-
+    console.error('[DailyOps AI] Firebase token verification failed:', error?.message || error);
     return res.status(401).json({
-      error: 'Authentication failed: Invalid or expired token. Please re-authenticate.',
+      error: 'Authentication failed: Invalid or expired Firebase ID token. Please re-authenticate.',
     });
   }
 }
@@ -415,16 +396,22 @@ ${trimmedInput}
       stack: error?.stack,
     });
 
-    let clientSafeMessage = error?.message || 'Failed to process operational task.';
-    if (clientSafeMessage.includes('API_KEY')) {
-      clientSafeMessage = 'Gemini API key is missing or invalid in server configuration.';
-    } else if (error?.status === 503) {
-      clientSafeMessage = 'Gemini models are experiencing high demand. Please retry in a moment.';
+    let clientSafeMessage = 'Failed to process operational task. Please try again.';
+    if (error?.message && error.message.includes('API_KEY')) {
+      clientSafeMessage = 'Operational AI service is temporarily unavailable. Please try again later.';
+    } else if (error?.status === 503 || error?.status === 429) {
+      clientSafeMessage = 'AI analysis service is experiencing high demand. Please retry in a moment.';
+    } else if (error?.message && (error.message.includes('too short') || error.message.includes('exceeds maximum'))) {
+      clientSafeMessage = error.message;
     }
 
-    return res.status(error?.status || 500).json({
+    const statusCode =
+      typeof error?.status === 'number' && error.status >= 400 && error.status < 600
+        ? error.status
+        : 500;
+
+    return res.status(statusCode).json({
       error: clientSafeMessage,
-      details: error?.message,
     });
   }
 });
